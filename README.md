@@ -88,23 +88,6 @@ Trigger it manually or wait for the scheduled run (every 5 minutes)
 Monitor the logs for any issues
 
 
-Project Structure
-
-airflow-stroke-analytics/
-├── docker-compose.yml          # Main compose file
-├── .env                        # Environment variables
-├── config/
-│   └── airflow.cfg            # Airflow configuration
-├── init/
-│   └── postgres-init.sql      # Database schema
-├── dags/
-│   └── stroke_analytics.py    # Airflow DAG
-├── scripts/
-│   └── spark_analytics.py     # Spark analytics script
-└── logs/                      # Airflow logs (auto-created)
-
-
-
 Analytics Tables Created
 The pipeline creates these cache tables in PostgreSQL:
 
