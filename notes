@@ -1,0 +1,73 @@
+Check Airflow Database (postgres_airflow):
+bash
+# Connect to Airflow database
+docker exec -it postgres_airflow psql -U airflow -d airflow
+
+# Once connected, list tables
+\dt
+
+# Check Airflow specific tables
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
+
+# Check if any DAGs are registered
+SELECT dag_id, is_paused, is_active FROM dag;
+
+# Check connection table (for Airflow connections)
+SELECT * FROM connection;
+
+# Exit
+\q
+Check Analytics Database (analytics-postgres):
+bash
+# Connect to analytics database
+docker exec -it analytics-postgres psql -U analytics_user -d analytics_db
+
+# List tables
+\dt
+
+# Check all tables
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
+
+# Check if there's any data
+SELECT * FROM information_schema.tables WHERE table_schema = 'public';
+
+# Exit
+\q
+Check Superset Database (postgres_superset):
+bash
+# Connect to Superset database
+docker exec -it postgres_superset psql -U superset -d superset
+
+# List tables
+\dt
+
+# Check tables
+SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name;
+
+# Exit
+\q
+One-liner commands to quickly check:
+bash
+# Airflow DB tables
+docker exec postgres_airflow psql -U airflow -d airflow -c "\dt"
+
+# Analytics DB tables  
+docker exec analytics-postgres psql -U analytics_user -d analytics_db -c "\dt"
+
+# Superset DB tables
+docker exec postgres_superset psql -U superset -d superset -c "\dt"
+Check if Airflow has initialized its metadata:
+bash
+# Check key Airflow tables existence
+docker exec postgres_airflow psql -U airflow -d airflow -c "
+SELECT COUNT(*) as table_count FROM information_schema.tables 
+WHERE table_schema = 'public' AND table_name LIKE 'airflow%';"
+Expected Results:
+Airflow Database should have ~40+ tables (dag, dag_run, task_instance, etc.)
+Analytics Database might be empty initially until you run DAGs
+Superset Database should have Superset metadata tables
+
+Run these commands and let me know what you see! This will tell us if the databases were properly initialized and if Airflow has created its metadata tables correctly.
+
+
+

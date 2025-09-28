@@ -25,6 +25,11 @@ services:
     image: redis:latest
     networks:
       - analytics-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres_airflow:
     image: postgres:13
@@ -64,7 +69,9 @@ services:
     depends_on:
       postgres_airflow:
         condition: service_healthy
-    user: "0:0"  # Run as root for initialization to fix permissions
+      redis:
+        condition: service_healthy
+    user: "0:0"
     command: >
       bash -c "
         # Fix permissions first
@@ -139,7 +146,7 @@ services:
       - airflow-init
     command: scheduler
     healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname airflow-scheduler"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -168,10 +175,11 @@ services:
       - airflow-init
     command: celery worker
     healthcheck:
-      test: ["CMD-SHELL", 'airflow celery inspect ping -t 30']
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      test: ["CMD-SHELL", "timeout 30s airflow celery inspect ping -d celery@$$HOSTNAME"]
+      interval: 60s
+      timeout: 40s
+      start_period: 120s
+      retries: 3
     restart: unless-stopped
 
   # ================= Superset =================
@@ -212,6 +220,11 @@ services:
       - analytics-network
     volumes:
       - postgres_superset_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset -d superset"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   analytics-network:
