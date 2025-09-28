@@ -1,0 +1,6 @@
+# AWS Credentials for S3 Access
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+
+# Optional: Superset Secret Key (change this in production)
+SUPERSET_SECRET_KEY=secret-superset-key
