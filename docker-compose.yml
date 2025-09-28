@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # ================= PostgreSQL for Analytics Cache =================
   postgres:
@@ -30,6 +28,7 @@ services:
 
   postgres_airflow:
     image: postgres:13
+    container_name: postgres_airflow
     environment:
       POSTGRES_DB: airflow
       POSTGRES_USER: airflow
@@ -38,15 +37,64 @@ services:
       - analytics-network
     volumes:
       - postgres_airflow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  airflow-webserver:
+  # Airflow initialization
+  airflow-init:
     image: apache/airflow:2.7.1
+    container_name: airflow-init
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scripts:/opt/airflow/scripts
+      - ./logs:/opt/airflow/logs
+    networks:
+      - analytics-network
+    depends_on:
+      postgres_airflow:
+        condition: service_healthy
+    user: "0:0"  # Run as root for initialization to fix permissions
+    command: >
+      bash -c "
+        # Fix permissions first
+        mkdir -p /opt/airflow/logs/scheduler /opt/airflow/logs/worker /opt/airflow/logs/webserver &&
+        chown -R 50000:0 /opt/airflow/logs &&
+        chmod -R 755 /opt/airflow/logs &&
+        # Wait for database
+        echo 'Waiting for database to be ready...' &&
+        until pg_isready -h postgres_airflow -p 5432 -U airflow; do
+          echo 'Waiting for database...';
+          sleep 5;
+        done &&
+        # Initialize Airflow
+        echo 'Initializing Airflow database...' &&
+        airflow db init &&
+        echo 'Creating admin user...' &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+        echo 'Airflow initialization complete'
+      "
+
+  airflow-webserver:
+    image: apache/airflow:2.7.1
+    container_name: airflow-webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres_airflow/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'false'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -54,29 +102,30 @@ services:
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
-      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
     ports:
       - "8080:8080"
     networks:
       - analytics-network
     depends_on:
-      - postgres_airflow
-      - redis
-    command: >
-      bash -c "
-        airflow db init &&
-        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
-        airflow webserver
-      "
+      - airflow-init
+    command: webserver
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   airflow-scheduler:
     image: apache/airflow:2.7.1
+    container_name: airflow-scheduler
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'false'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -84,23 +133,28 @@ services:
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
-      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
     networks:
       - analytics-network
     depends_on:
-      - postgres_airflow
-      - redis
-      - airflow-webserver
-    command: bash -c "sleep 30 && airflow scheduler"
+      - airflow-init
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   airflow-worker:
     image: apache/airflow:2.7.1
+    container_name: airflow-worker
     environment:
       AIRFLOW__CORE__EXECUTOR: CeleryExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres_airflow/airflow
       AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS: 'false'
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
@@ -108,14 +162,17 @@ services:
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
       - ./logs:/opt/airflow/logs
-      - ./config/airflow.cfg:/opt/airflow/airflow.cfg
     networks:
       - analytics-network
     depends_on:
-      - postgres_airflow
-      - redis
-      - airflow-scheduler
-    command: bash -c "sleep 30 && airflow worker"
+      - airflow-init
+    command: celery worker
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow celery inspect ping -t 30']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
 
   # ================= Superset =================
   superset:
