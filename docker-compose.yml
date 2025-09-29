@@ -78,6 +78,7 @@ services:
         mkdir -p /opt/airflow/logs/scheduler /opt/airflow/logs/worker /opt/airflow/logs/webserver &&
         chown -R 50000:0 /opt/airflow/logs &&
         chmod -R 755 /opt/airflow/logs &&
+        chmod 400 opt/airflow/dags/mlops-proj.pem &&
         # Wait for database
         echo 'Waiting for database to be ready...' &&
         until pg_isready -h postgres_airflow -p 5432 -U airflow; do

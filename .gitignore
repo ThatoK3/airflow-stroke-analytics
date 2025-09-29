@@ -1,1 +1,4 @@
 .env
+./dags/mlops-proj.pem
+./dags/__pycache__/
+
