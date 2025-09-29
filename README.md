@@ -1,5 +1,7 @@
 Airflow Stroke Analytics Project
 This project sets up an Airflow pipeline that runs Spark analytics on stroke prediction data and caches the results in PostgreSQL for Superset dashboards.
+
+
 ls
 README.md  config  dags  docker-compose.yml  dotenv.notes  init  logs  notes  scripts
 
